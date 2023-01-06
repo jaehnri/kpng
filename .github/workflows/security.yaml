@@ -29,6 +29,8 @@ jobs:
           skip-upload: true
           package: cmd/
           fail-on-vuln: false
+        env:
+          DEBUG: "true"
 
       - name: Upload SARIF report
         uses: github/codeql-action/upload-sarif@v2
