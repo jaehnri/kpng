@@ -32,6 +32,12 @@ jobs:
         env:
           DEBUG: "true"
 
+      - name: Upload Raw Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: raw-report
+          path: raw-report.json
+
       - name: Upload SARIF report
         uses: github/codeql-action/upload-sarif@v2
         with:
