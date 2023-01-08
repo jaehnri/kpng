@@ -25,6 +25,10 @@ workdir /src
 arg GOPROXY
 arg GONOSUMDB
 
+arg RELEASE
+arg GIT_REPO_URL
+arg GIT_COMMIT_HASH
+
 # cache dependencies, they don't change as much as the code
 copy --from=gomods /src/ /src/
 run go mod download
@@ -34,7 +38,10 @@ run go mod download
 add . ./
 #run go test ./...
 run go install -trimpath \
-      -ldflags "-extldflags '-static -pthread'" \
+      -ldflags "-extldflags '-static -pthread' \
+      -X main.RELEASE=$RELEASE \
+      -X main.REPO=$GIT_REPO_URL \
+      -X main.COMMIT=$GIT_COMMIT_HASH" \
       ./cmd/...
 
 # the real image

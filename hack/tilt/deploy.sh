@@ -24,7 +24,10 @@ source ${SCRIPT_DIR}/common.sh
 
 KPNG_IMAGE="kpng"
 function build_kpng_and_load_image {
-  if docker build -t $KPNG_IMAGE:latest $SRC_DIR/ ; then
+  if docker build -t $KPNG_IMAGE:latest $SRC_DIR/ \
+            --build-arg RELEASE="${RELEASE}" \
+            --build-arg GIT_REPO_URL="${GIT_REPO_URL}" \
+            --build-arg GIT_COMMIT_HASH="${GIT_COMMIT_HASH}" ; then
 	  echo "passed build"
   else
 	  echo "failed build"

@@ -37,7 +37,10 @@ read
 function build_kpng {
     cd ../
 
-    if docker build -t $IMAGE ./ ; then
+    if docker build -t $IMAGE ./ \
+              --build-arg RELEASE="${RELEASE}" \
+              --build-arg GIT_REPO_URL="${GIT_REPO_URL}" \
+              --build-arg GIT_COMMIT_HASH="${GIT_COMMIT_HASH}" ; then
 	echo "passed build"
     else
 	echo "failed build"
@@ -63,7 +66,7 @@ function install_kpng {
     export kpng_image="${IMAGE}" 
     export image_pull_policy="${PULL}" 
     export backend="${BACKEND}" 
-    export config_map_name="${CONFIG_MAP_NAME}" 
+    export config_map_name="${CONFIG_MAP_NAME}"
     export service_account_name="${SERVICE_ACCOUNT_NAME}" 
     export namespace="${NAMESPACE}" 
     export e2e_backend_args="${BACKEND_ARGS}"

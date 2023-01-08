@@ -37,6 +37,9 @@ CLUSTER_NAME="kpng-proxy"
 K8S_VERSION="v1.25.3"
 OS=$(uname| tr '[:upper:]' '[:lower:]')
 
+GIT_COMMIT_HASH=$(git describe --tags --always --long)
+GIT_REPO_URL=$(git config --get remote.origin.url)
+
 function add_to_path {
     ###########################################################################
     # Description:                                                            #

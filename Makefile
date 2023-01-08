@@ -17,8 +17,9 @@
 all: help
 
 # kpng build info
-VERSION=$(shell git describe --tags --always --long)
-LDFLAGS="-X main.version=$(VERSION)"
+GIT_COMMIT_HASH=$(git describe --tags --always --long)
+GIT_REPO_URL=$(git config --get remote.origin.url)
+LDFLAGS="-X main.COMMIT=$(GIT_COMMIT_HASH) -X main.REPO=$(GIT_REPO_URL)"
 ARCH="amd64"
 BUILD_DIR="kpng-bin"
 export PLATFORM=""
