@@ -12,6 +12,9 @@ on:
     paths-ignore:
       - 'doc/**'
 
+env:
+  GO_VERSION: "1.19"
+
 jobs:
   govulncheck:
     name: govulncheck
@@ -24,19 +27,11 @@ jobs:
       - name: Scan for Vulnerabilities in Code
         uses: Templum/govulncheck-action@v0.0.8
         with:
-          go-version: 1.19
-          vulncheck-version: latest
+          package: ./cmd/
           skip-upload: true
-          package: ./cmd/...
           fail-on-vuln: false
-        env:
-          DEBUG: "true"
-
-      - name: Upload Raw Report
-        uses: actions/upload-artifact@v3
-        with:
-          name: raw-report
-          path: raw-report.json
+          vulncheck-version: latest
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Upload SARIF report
         uses: github/codeql-action/upload-sarif@v2
