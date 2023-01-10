@@ -16,6 +16,22 @@ env:
   GO_VERSION: "1.19"
 
 jobs:
+  gosec:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b # v3.2.0
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@1af1d5bb49259b62e45c505db397dd2ada5d74f8 # v2.14.0
+        with:
+          # Ignoring:
+          # G104: Errors not checked
+          # G306: Expect WriteFile permissions to be 0600 or less
+          # G307: Deferring unsafe method "Close"
+          args: -exclude=G104,G306,G307 -tests=false -exclude-dir=doc/  ./...
+
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
@@ -27,7 +43,7 @@ jobs:
       - name: Scan for Vulnerabilities in Code
         uses: Templum/govulncheck-action@v0.0.8
         with:
-          package: ./cmd/
+          package: cmd/...
           skip-upload: true
           fail-on-vuln: false
           vulncheck-version: latest
