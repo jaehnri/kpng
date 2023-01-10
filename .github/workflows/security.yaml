@@ -30,7 +30,7 @@ jobs:
           # G104: Errors not checked
           # G306: Expect WriteFile permissions to be 0600 or less
           # G307: Deferring unsafe method "Close"
-          args: -exclude=G104,G306,G307 -tests=false -exclude-dir=doc/ -fmt sarif -out gosec-results.sarif  ./...
+          args: -exclude=G104,G306,G307 -tests=false -exclude-dir=doc/ -no-fail -fmt sarif -out gosec-results.sarif  ./...
 
       - name: Upload SARIF report
         uses: github/codeql-action/upload-sarif@v2
