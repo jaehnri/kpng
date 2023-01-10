@@ -27,7 +27,7 @@ jobs:
           go-version: 1.19
           vulncheck-version: latest
           skip-upload: true
-          package: cmd/
+          package: cmd/...
           fail-on-vuln: false
         env:
           DEBUG: "true"
