@@ -39,6 +39,8 @@ OS=$(uname| tr '[:upper:]' '[:lower:]')
 
 GIT_COMMIT_HASH=$(git describe --tags --always --long)
 GIT_REPO_URL=$(git config --get remote.origin.url)
+# TODO: Create release tag
+RELEASE=UNKNOWN
 
 function add_to_path {
     ###########################################################################
