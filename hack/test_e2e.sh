@@ -102,10 +102,7 @@ function container_build {
     [ -f "${CONTAINER_FILE}" ]
     if_error_exit "cannot find ${CONTAINER_FILE}"
 
-    CMD_BUILD_IMAGE=("${CONTAINER_ENGINE} build ${QUIET_MODE} -t ${KPNG_IMAGE_TAG_NAME} -f ${CONTAINER_FILE} . \
-    --build-arg RELEASE=${RELEASE} \
-    --build-arg GIT_REPO_URL=${GIT_REPO_URL} \
-    --build-arg GIT_COMMIT_HASH=${GIT_COMMIT_HASH}")
+    CMD_BUILD_IMAGE=("${CONTAINER_ENGINE} build ${QUIET_MODE} -t ${KPNG_IMAGE_TAG_NAME} -f ${CONTAINER_FILE} .")
 
     pushd "${0%/*}/.." > /dev/null || exit
         if [ -z "${QUIET_MODE}" ]; then

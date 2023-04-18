@@ -13,10 +13,10 @@ run apk add --update --no-cache \
 # go mod args
 arg GOPROXY
 arg GONOSUMDB
-
-arg RELEASE
-arg GIT_REPO_URL
-arg GIT_COMMIT_HASH
+#
+#arg RELEASE
+#arg GIT_REPO_URL
+#arg GIT_COMMIT_HASH
 
 # cache dependencies, they don't change as much as the code
 copy --from=gomods /src/ /src/
@@ -28,11 +28,13 @@ run go mod download
 
 add . ./
 #run for f in $(find -name go.mod); do d=$(dirname $f); echo "testing in $d"; ( cd $d && go test ./... ); done
-run go install -trimpath -buildvcs=false -ldflags \
-    "-X main.RELEASE=$RELEASE \
-     -X main.REPO=$GIT_REPO_URL \
-     -X main.COMMIT=$GIT_COMMIT_HASH" \
-    ./cmd/...
+run go install -trimpath -buildvcs=false ./cmd/...
+
+#run go install -trimpath -buildvcs=false -ldflags \
+#    "-X main.RELEASE=$RELEASE \
+#     -X main.REPO=$GIT_REPO_URL \
+#     -X main.COMMIT=$GIT_COMMIT_HASH" \
+#    ./cmd/...
 
 # the real image
 from alpine:3.16
