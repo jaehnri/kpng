@@ -77,11 +77,15 @@ func ebpfSetup() ebpfController {
 
 	klog.Infof("Cgroup Path is %s", cgroupPath)
 
-	// Link the proxy program to the default cgroup.
-	l, err := link.AttachCgroup(link.CgroupOptions{
-		Path:    cgroupPath,
-		Attach:  cebpf.AttachCGroupInet4Connect,
-		Program: objs.Sock4Connect,
+	// TODO(jaehnri): We have to find the correct interface to attach the program
+	ifce, err := net.InterfaceByName("eth0")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	l, err := link.AttachXDP(link.XDPOptions{
+		Interface: ifce.Index,
+		Program:   objs.Sock4Connect,
 	})
 	if err != nil {
 		klog.Fatal(err)
