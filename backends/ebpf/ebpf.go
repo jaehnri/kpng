@@ -77,15 +77,11 @@ func ebpfSetup() ebpfController {
 
 	klog.Infof("Cgroup Path is %s", cgroupPath)
 
-	// TODO(jaehnri): We have to find the correct interface to attach the program
-	ifce, err := net.InterfaceByName("eth0")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	l, err := link.AttachXDP(link.XDPOptions{
-		Interface: ifce.Index,
-		Program:   objs.Sock4Connect,
+	// Link the proxy program to the default cgroup.
+	l, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    cgroupPath,
+		Attach:  cebpf.AttachCGroupInet4Connect,
+		Program: objs.Sock4Connect,
 	})
 	if err != nil {
 		klog.Fatal(err)
@@ -94,6 +90,54 @@ func ebpfSetup() ebpfController {
 	klog.Infof("Proxying packets in kernel...")
 
 	return NewEBPFController(objs, l, v1.IPv4Protocol)
+}
+
+//go:generate bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS xdp_bpf ./bpf/xdp_print.c
+func xdpSetup() xdpController {
+	var err error
+
+	printInterfaces()
+
+	// Allow the current process to lock memory for eBPF resources.
+	if err := rlimit.RemoveMemlock(); err != nil {
+		klog.Fatal(err)
+	}
+
+	// Load pre-compiled programs and maps into the kernel.
+	xdpProgram := xdp_bpfPrograms{}
+
+	if err := loadXdp_bpfObjects(&xdpProgram, &cebpf.CollectionOptions{}); err != nil {
+		log.Fatalf("loading objects: %v", err)
+	}
+
+	// TODO(jaehnri): We have to find the correct interface to attach the program
+	ifce, err := net.InterfaceByName("eth0")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	l, err := link.AttachXDP(link.XDPOptions{
+		Interface: ifce.Index,
+		Program:   xdpProgram.Hello,
+	})
+
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	klog.Infof("Proxying packets in kernel...")
+	return NewXDPeBPFController(xdpProgram, l, v1.IPv4Protocol)
+}
+
+func printInterfaces() {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, i := range interfaces {
+		klog.Infof("Index: %d; Name: %s; MTU: %d", i.Index, i.Name, i.MTU)
+	}
 }
 
 // detectCgroupPath returns the first-found mount point of type cgroup2

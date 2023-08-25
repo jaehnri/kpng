@@ -15,6 +15,7 @@ download-libbpf:
 clean:
 	-$(RM) *.o
 	-$(RM) bpf_bp*.go
+	-$(RM) xdp_bpf_bp*.go
 	-$(RM) -r libbpf
 
 bytecode: export BPF_CLANG := $(CLANG)

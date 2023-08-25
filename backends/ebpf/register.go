@@ -26,7 +26,10 @@ import (
 	"sigs.k8s.io/kpng/client/localsink/fullstate/fullstatepipe"
 )
 
-var ebc ebpfController
+var (
+	ebc  ebpfController
+	xdpc xdpController
+)
 
 type backend struct {
 	cfg localsink.Config
@@ -50,6 +53,9 @@ func (s *backend) Reset() { /* noop */ }
 func (s *backend) Setup() {
 	ebc = ebpfSetup()
 	klog.Infof("Loading ebpf maps and program %+v", ebc)
+
+	xdpc = xdpSetup()
+	klog.Infof("Loading XDP program %+v", xdpc)
 }
 
 func (b *backend) Sync() { /* no-op */ }
