@@ -118,7 +118,7 @@ func xdpSetup() xdpController {
 
 	l, err := link.AttachXDP(link.XDPOptions{
 		Interface: ifce.Index,
-		Program:   xdpProgram.Hello,
+		Program:   xdpProgram.XdpProgFunc,
 	})
 
 	if err != nil {
