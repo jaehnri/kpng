@@ -76,7 +76,7 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	Sock4Connect *ebpf.ProgramSpec `ebpf:"sock4_connect"`
+	XdpProgFunc *ebpf.ProgramSpec `ebpf:"xdp_prog_func"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
@@ -85,6 +85,7 @@ type bpfProgramSpecs struct {
 type bpfMapSpecs struct {
 	V4BackendMap *ebpf.MapSpec `ebpf:"v4_backend_map"`
 	V4SvcMap     *ebpf.MapSpec `ebpf:"v4_svc_map"`
+	XdpStatsMap  *ebpf.MapSpec `ebpf:"xdp_stats_map"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -108,12 +109,14 @@ func (o *bpfObjects) Close() error {
 type bpfMaps struct {
 	V4BackendMap *ebpf.Map `ebpf:"v4_backend_map"`
 	V4SvcMap     *ebpf.Map `ebpf:"v4_svc_map"`
+	XdpStatsMap  *ebpf.Map `ebpf:"xdp_stats_map"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.V4BackendMap,
 		m.V4SvcMap,
+		m.XdpStatsMap,
 	)
 }
 
@@ -121,12 +124,12 @@ func (m *bpfMaps) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	Sock4Connect *ebpf.Program `ebpf:"sock4_connect"`
+	XdpProgFunc *ebpf.Program `ebpf:"xdp_prog_func"`
 }
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
-		p.Sock4Connect,
+		p.XdpProgFunc,
 	)
 }
 

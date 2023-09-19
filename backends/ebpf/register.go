@@ -27,8 +27,7 @@ import (
 )
 
 var (
-	ebc  ebpfController
-	xdpc xdpController
+	ebc ebpfController
 )
 
 type backend struct {
@@ -53,9 +52,6 @@ func (s *backend) Reset() { /* noop */ }
 func (s *backend) Setup() {
 	ebc = ebpfSetup()
 	klog.Infof("Loading ebpf maps and program %+v", ebc)
-
-	xdpc = xdpSetup()
-	klog.Infof("Loading XDP program %+v", xdpc)
 }
 
 func (b *backend) Sync() { /* no-op */ }

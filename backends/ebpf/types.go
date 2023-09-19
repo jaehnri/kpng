@@ -52,37 +52,12 @@ type ebpfController struct {
 	svcMap *lightdiffstore.DiffStore
 }
 
-type xdpController struct {
-	// protects the following fields
-	mu sync.Mutex
-
-	// Keeps track of ebpf objects in memory.
-	xdpPrograms xdp_bpfPrograms
-
-	// Program Link,
-	bpfLink cebpflink.Link
-
-	ipFamily v1.IPFamily
-
-	// <namespacedName>/<port>/<protocol> -> serviceEndpoints
-	svcMap *lightdiffstore.DiffStore
-}
-
 func NewEBPFController(objs bpfObjects, bpfProgLink cebpflink.Link, ipFamily v1.IPFamily) ebpfController {
 	return ebpfController{
 		objs:     objs,
 		bpfLink:  bpfProgLink,
 		ipFamily: ipFamily,
 		svcMap:   lightdiffstore.New(),
-	}
-}
-
-func NewXDPeBPFController(programs xdp_bpfPrograms, bpfProgLink cebpflink.Link, ipFamily v1.IPFamily) xdpController {
-	return xdpController{
-		xdpPrograms: programs,
-		bpfLink:     bpfProgLink,
-		ipFamily:    ipFamily,
-		svcMap:      lightdiffstore.New(),
 	}
 }
 

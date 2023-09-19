@@ -17,16 +17,12 @@ limitations under the License.
 package ebpf
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net"
-	"os"
-	"strings"
 
 	cebpf "github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -42,58 +38,8 @@ import (
 	"github.com/cespare/xxhash"
 )
 
-//go:generate bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf ./bpf/cgroup_connect4.c
+//go:generate bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf ./bpf/xdp_print.c
 func ebpfSetup() ebpfController {
-	var err error
-
-	// Allow the current process to lock memory for eBPF resources.
-	if err := rlimit.RemoveMemlock(); err != nil {
-		klog.Fatal(err)
-	}
-
-	// Load pre-compiled programs and maps into the kernel.
-	objs := bpfObjects{}
-	if err := loadBpfObjects(&objs, &cebpf.CollectionOptions{}); err != nil {
-		log.Fatalf("loading objects: %v", err)
-	}
-
-	info, err := objs.bpfMaps.V4SvcMap.Info()
-	if err != nil {
-		klog.Fatalf("Cannot get map info: %v", err)
-	}
-	klog.Infof("Svc Map Info: %+v with FD %s", info, objs.bpfMaps.V4SvcMap.String())
-
-	info, err = objs.bpfMaps.V4BackendMap.Info()
-	if err != nil {
-		klog.Fatalf("Cannot get map info: %v", err)
-	}
-	klog.Infof("Backend Map Info: %+v", info)
-
-	// Get the first-mounted cgroupv2 path.
-	cgroupPath, err := detectRootCgroupPath()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	klog.Infof("Cgroup Path is %s", cgroupPath)
-
-	// Link the proxy program to the default cgroup.
-	l, err := link.AttachCgroup(link.CgroupOptions{
-		Path:    cgroupPath,
-		Attach:  cebpf.AttachCGroupInet4Connect,
-		Program: objs.Sock4Connect,
-	})
-	if err != nil {
-		klog.Fatal(err)
-	}
-
-	klog.Infof("Proxying packets in kernel...")
-
-	return NewEBPFController(objs, l, v1.IPv4Protocol)
-}
-
-//go:generate bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS xdp_bpf ./bpf/xdp_print.c
-func xdpSetup() xdpController {
 	var err error
 
 	printInterfaces()
@@ -104,9 +50,9 @@ func xdpSetup() xdpController {
 	}
 
 	// Load pre-compiled programs and maps into the kernel.
-	xdpProgram := xdp_bpfPrograms{}
+	xdpProgram := bpfObjects{}
 
-	if err := loadXdp_bpfObjects(&xdpProgram, &cebpf.CollectionOptions{}); err != nil {
+	if err := loadBpfObjects(&xdpProgram, &cebpf.CollectionOptions{}); err != nil {
 		log.Fatalf("loading objects: %v", err)
 	}
 
@@ -126,7 +72,7 @@ func xdpSetup() xdpController {
 	}
 
 	klog.Infof("Proxying packets in kernel...")
-	return NewXDPeBPFController(xdpProgram, l, v1.IPv4Protocol)
+	return NewEBPFController(xdpProgram, l, v1.IPv4Protocol)
 }
 
 func printInterfaces() {
@@ -138,28 +84,6 @@ func printInterfaces() {
 	for _, i := range interfaces {
 		klog.Infof("Index: %d; Name: %s; MTU: %d", i.Index, i.Name, i.MTU)
 	}
-}
-
-// detectCgroupPath returns the first-found mount point of type cgroup2
-// and stores it in the cgroupPath globalv1 variable.
-func detectRootCgroupPath() (string, error) {
-	// This corresponds to the host's mount's location in the pod deploying this backend.
-	f, err := os.Open("/host-mount/mounts")
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		// example fields: cgroup2 /sys/fs/cgroup/unified cgroup2 rw,nosuid,nodev,noexec,relatime 0 0
-		fields := strings.Split(scanner.Text(), " ")
-		if len(fields) >= 3 && fields[2] == "cgroup2" {
-			return fields[1], nil
-		}
-	}
-
-	return "", errors.New("cgroup2 not mounted")
 }
 
 func (ebc *ebpfController) Cleanup() {
