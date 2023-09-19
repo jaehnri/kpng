@@ -13,12 +13,14 @@
 
 char __license[] SEC("license") = "Dual BSD/GPL";
 
+// Key to the first map. Denotes a simple virtual IPV4 address
 struct V4_key {
   __be32 address;     /* Service virtual IPv4 address  4*/
   __be16 dport;       /* L4 port filter, if unset, all ports apply   */
   __u16 backend_slot; /* Backend iterator, 0 indicates the svc frontend  2*/
 };
 
+// Kubernetes ClusterIP service. 
 struct lb4_service {
   union {
     __u32 backend_id;       /* Backend ID in lb4_backends */
@@ -36,6 +38,7 @@ struct lb4_service {
   __u8 pad[2];
 };
 
+// Kubernetes Endpoint IPv4 address
 struct lb4_backend {
   __be32 address; /* Service endpoint IPv4 address */
   __be16 port;    /* L4 port filter */
@@ -56,6 +59,19 @@ struct {
   __uint(max_entries, DEFAULT_MAX_EBPF_MAP_ENTRIES);
 } v4_backend_map SEC(".maps");
 
+/* Hack due to missing narrow ctx access. */
+static __always_inline __be16 ctx_dst_port(const struct bpf_sock_addr *ctx) {
+  volatile __u32 dport = ctx->user_port;
+
+  return (__be16)dport;
+}
+
+/* Generates a random u32 number */
+static __always_inline __u64 sock_select_slot(struct bpf_sock_addr *ctx) {
+  return ctx->protocol == IPPROTO_TCP ? bpf_get_prandom_u32() : 0;
+}
+
+// Uses v4_svc_map to find a Kubernetes service
 static __always_inline struct lb4_service *
 lb4_lookup_service(struct V4_key *key) {
   struct lb4_service *svc;
@@ -68,25 +84,16 @@ lb4_lookup_service(struct V4_key *key) {
   return NULL;
 }
 
-/* Hack due to missing narrow ctx access. */
-static __always_inline __be16 ctx_dst_port(const struct bpf_sock_addr *ctx) {
-  volatile __u32 dport = ctx->user_port;
-
-  return (__be16)dport;
-}
-
-static __always_inline __u64 sock_select_slot(struct bpf_sock_addr *ctx) {
-  return ctx->protocol == IPPROTO_TCP ? bpf_get_prandom_u32() : 0;
-}
-
-static __always_inline struct lb4_backend *
-__lb4_lookup_backend(__u32 backend_id) {
-  return bpf_map_lookup_elem(&v4_backend_map, &backend_id);
-}
-
+// Uses v4_svc_map to find a backend_slot given a key with backend_slot 
 static __always_inline struct lb4_service *
 __lb4_lookup_backend_slot(struct V4_key *key) {
   return bpf_map_lookup_elem(&v4_svc_map, key);
+}
+
+// Performs a query on v4_backend_map to find an Endpoint given the backend_id
+static __always_inline struct lb4_backend *
+__lb4_lookup_backend(__u32 backend_id) {
+  return bpf_map_lookup_elem(&v4_backend_map, &backend_id);
 }
 
 /* Service translation logic for a local-redirect service can cause packets to
@@ -141,6 +148,9 @@ static __always_inline void ctx_set_port(struct bpf_sock_addr *ctx,
 }
 
 static __always_inline int __sock4_fwd(struct bpf_sock_addr *ctx) {
+
+  // Build a V4_key from the received packet, setting the backend_slot to 0.
+  // When 0, the key is used to find the service frontend
   struct V4_key key = {
       .address = ctx->user_ip4,
       .dport = ctx_dst_port(ctx),
@@ -153,25 +163,30 @@ static __always_inline int __sock4_fwd(struct bpf_sock_addr *ctx) {
 
   __u32 backend_id = 0;
 
+  // The first lookup is meant to see if the "Service frontend" exists and check how many 
+  // backends, i.e, Endpoints, it has
   svc = lb4_lookup_service(&key);
   if (!svc) {
     return -ENXIO;
   }
 
-  // Logs are in /sys/kernel/debug/tracing/trace_pipe
-
+  // Logs are in /tracing/trace_pipe inside the kpng-ebpf-tools container
   const char debug_str[] = "Entering the kpng ebpf backend, caught a\
   packet destined for my VIP, the address is: %x port is: %x and selected backend id is: %x\n";
   
   bpf_trace_printk(debug_str, sizeof(debug_str),  key.address, key.dport, svc->backend_id);
 
   if (backend_id == 0) {
+    
+    // Do load-balancing by sorting a backend. Then, lookups the same v4_svc_map
+    // with the key.backend_slot filled to get the backend_id relative to the sorted backend
     key.backend_slot = (sock_select_slot(ctx) % svc->count) + 1;
     backend_slot = __lb4_lookup_backend_slot(&key);
     if (!backend_slot) {
       return -ENOENT;
     }
 
+    // The backend_id is used to fetch the final Endpoint
     backend_id = backend_slot->backend_id;
     backend = __lb4_lookup_backend(backend_id);
   }
@@ -184,6 +199,7 @@ static __always_inline int __sock4_fwd(struct bpf_sock_addr *ctx) {
     return -ENXIO;
   }
 
+  // Finally, ctx is modified to contain the selected Endpoint's IP and port
   ctx->user_ip4 = backend->address;
   ctx_set_port(ctx, backend->port);
 
