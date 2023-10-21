@@ -85,7 +85,6 @@ type bpfProgramSpecs struct {
 type bpfMapSpecs struct {
 	V4BackendMap *ebpf.MapSpec `ebpf:"v4_backend_map"`
 	V4SvcMap     *ebpf.MapSpec `ebpf:"v4_svc_map"`
-	XdpStatsMap  *ebpf.MapSpec `ebpf:"xdp_stats_map"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -109,14 +108,12 @@ func (o *bpfObjects) Close() error {
 type bpfMaps struct {
 	V4BackendMap *ebpf.Map `ebpf:"v4_backend_map"`
 	V4SvcMap     *ebpf.Map `ebpf:"v4_svc_map"`
-	XdpStatsMap  *ebpf.Map `ebpf:"xdp_stats_map"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.V4BackendMap,
 		m.V4SvcMap,
-		m.XdpStatsMap,
 	)
 }
 

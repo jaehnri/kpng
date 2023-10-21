@@ -8,6 +8,7 @@
 //#include <errno.h>
 #include "bpf_endian.h"
 #include "common.h"
+#include <errno.h>
 
 char __license[] SEC("license") = "Dual BSD/GPL";
 
@@ -62,65 +63,127 @@ struct {
   __uint(max_entries, DEFAULT_MAX_EBPF_MAP_ENTRIES);
 } v4_backend_map SEC(".maps");
 
+// Uses v4_svc_map to find a Kubernetes service
+/*static __always_inline struct lb4_service *
+lb4_lookup_service(struct V4_key *key) {
+  struct lb4_service *svc;
 
-/* Define an LRU hash map for storing packet count by source IPv4 address */
-struct {
-	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, MAX_MAP_ENTRIES);
-	__type(key, __u32);   // source IPv4 address
-	__type(value, __u32); // packet count
-} xdp_stats_map SEC(".maps");
+  svc = bpf_map_lookup_elem(&v4_svc_map, key);
+  if (svc) {
+    return svc;
+  }
 
-/*
-Attempt to parse the IPv4 source address from the packet.
-Returns 0 if there is no IPv4 header field; otherwise returns non-zero.
-*/
-static __always_inline int parse_ip_src_addr(struct xdp_md *ctx, __u32 *ip_src_addr) {
-	void *data_end = (void *)(long)ctx->data_end;
+  return NULL;
+}*/
+
+// Uses v4_svc_map to find a backend_slot given a key with backend_slot 
+/*static __always_inline struct lb4_service *
+__lb4_lookup_backend_slot(struct V4_key *key) {
+  return bpf_map_lookup_elem(&v4_svc_map, key);
+}
+
+// Performs a query on v4_backend_map to find an Endpoint given the backend_id
+static __always_inline struct lb4_backend *
+__lb4_lookup_backend(__u32 backend_id) {
+  return bpf_map_lookup_elem(&v4_backend_map, &backend_id);
+}*/
+
+/* Generates a random u32 number */
+/*static __always_inline __u64 sock_select_slot(struct iphdr *iph) {
+  return iph->protocol == IPPROTO_TCP ? bpf_get_prandom_u32() : 0;
+}*/
+
+SEC("xdp")
+int xdp_prog_func(struct xdp_md *ctx) {
+	//__be32 dest_ip;
+	//__be16 dest_port;
+
+  // Parse the raw packge the get the protocol headers
+ 	void *data_end = (void *)(long)ctx->data_end;
 	void *data     = (void *)(long)ctx->data;
 
 	// First, parse the ethernet header.
 	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > data_end) {
-		return 0;
+	if (data + sizeof(struct ethhdr) > data_end) {
+		return XDP_PASS;
 	}
 
-	if (eth->h_proto != bpf_htons(ETH_P_IP)) {
+	if (bpf_ntohs(eth->h_proto) != ETH_P_IP) {
 		// The protocol is not IPv4, so we can't parse an IPv4 source address.
-		return 0;
+		return XDP_PASS;
 	}
 
 	// Then parse the IP header.
-	struct iphdr *ip = (void *)(eth + 1);
-	if ((void *)(ip + 1) > data_end) {
-		return 0;
+	struct iphdr *iph = data + sizeof(*eth);
+	if (data + sizeof(struct ethhdr) +  sizeof(struct iphdr) > data_end) {
+		return XDP_PASS;
 	}
 
-	// Return the source IP address in network byte order.
-	*ip_src_addr = (__u32)(ip->saddr);
-	return 1;
-}
+	if (iph->protocol != IPPROTO_TCP)
+		return XDP_PASS;
 
-SEC("xdp")
-int xdp_prog_func(struct xdp_md *ctx) {
-	__u32 ip;
-	if (!parse_ip_src_addr(ctx, &ip)) {
-		// Not an IPv4 packet, so don't count it.
-		goto done;
-	}
+	// Then parse the TCP header
+	struct tcphdr *tcp = (struct tcphdr *)(iph + 1);
+	if ((void *)(tcp + 1) > data_end)
+		return XDP_PASS;
 
-	__u32 *pkt_count = bpf_map_lookup_elem(&xdp_stats_map, &ip);
-	if (!pkt_count) {
-		// No entry in the map for this IP address yet, so set the initial value to 1.
-		__u32 init_pkt_count = 1;
-		bpf_map_update_elem(&xdp_stats_map, &ip, &init_pkt_count, BPF_ANY);
-	} else {
-		// Entry already exists for this IP address,
-		// so increment it atomically using an LLVM built-in.
-		__sync_fetch_and_add(pkt_count, 1);
-	}
+	// Save the destination IP address and TCP port
+	//dest_ip = (__be32)(iph->daddr);
+	//dest_port = (__be16)(tcp->dest);
 
-done:
-	// Try changing this to XDP_DROP and see what happens!
+  //bpf_trace_printk("Destination address: %x and port %x\n", dest_ip, dest_port);
+
+  // Start backend lookup
+	/*struct V4_key key = {
+		.address = dest_ip,
+		.dport = dest_port,
+		.backend_slot = 0
+	};
+
+  struct lb4_service *svc;*/
+  //struct lb4_service *backend_slot;
+  //struct lb4_backend *backend = NULL;
+
+	//__u32 backend_id = 0;
+
+	// The first lookup is meant to see if the "Service frontend" exists and check how many 
+  // backends, i.e, Endpoints, it has
+  /*svc = lb4_lookup_service(&key);
+  if (!svc) {
+  	return -ENXIO;
+  }*/
+  
+  // Logs are in /tracing/trace_pipe inside the kpng-ebpf-tools container
+  //const char debug_str[] = "Entering the kpng ebpf backend, caught a\
+  //packet destined for my VIP, the address is: %x port is: %x and selected backend id is: %x\n";
+  
+  //bpf_trace_printk(debug_str, sizeof(debug_str),  key.address, key.dport, svc->backend_id);
+
+  /*if (backend_id == 0) {
+    // Do load-balancing by sorting a backend. Then, lookups the same v4_svc_map
+    // with the key.backend_slot filled to get the backend_id relative to the sorted backend
+    key.backend_slot = (sock_select_slot(iph) % svc->count) + 1;
+    backend_slot = __lb4_lookup_backend_slot(&key);
+    if (!backend_slot) {
+      return -ENOENT;
+    }
+
+    // The backend_id is used to fetch the final Endpoint
+    backend_id = backend_slot->backend_id;
+    backend = __lb4_lookup_backend(backend_id);
+  }
+
+  if (!backend) {
+    return -ENOENT;
+  }*/
+
+  // Maybe add that in the future
+  /*if (sock4_skip_xlate_if_same_netns(ctx, backend)) {
+    return -ENXIO;
+  }*/
+
+  /*iph->daddr = dest_ip;
+  tcp->dest = dest_port;*/
+
 	return XDP_PASS;
 }
