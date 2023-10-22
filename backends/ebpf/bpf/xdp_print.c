@@ -18,6 +18,7 @@ char __license[] SEC("license") = "Dual BSD/GPL";
 #define SYS_PROCEED 1
 #define DEFAULT_MAX_EBPF_MAP_ENTRIES 65536
 #define IPPROTO_TCP 6
+#define IPPROTO_UDP 17
 
 struct V4_key {
   __be32 address;     /* Service virtual IPv4 address  4*/
@@ -64,7 +65,7 @@ struct {
 } v4_backend_map SEC(".maps");
 
 // Uses v4_svc_map to find a Kubernetes service
-/*static __always_inline struct lb4_service *
+static __always_inline struct lb4_service *
 lb4_lookup_service(struct V4_key *key) {
   struct lb4_service *svc;
 
@@ -74,10 +75,10 @@ lb4_lookup_service(struct V4_key *key) {
   }
 
   return NULL;
-}*/
+}
 
 // Uses v4_svc_map to find a backend_slot given a key with backend_slot 
-/*static __always_inline struct lb4_service *
+static __always_inline struct lb4_service *
 __lb4_lookup_backend_slot(struct V4_key *key) {
   return bpf_map_lookup_elem(&v4_svc_map, key);
 }
@@ -86,86 +87,127 @@ __lb4_lookup_backend_slot(struct V4_key *key) {
 static __always_inline struct lb4_backend *
 __lb4_lookup_backend(__u32 backend_id) {
   return bpf_map_lookup_elem(&v4_backend_map, &backend_id);
-}*/
+}
 
 /* Generates a random u32 number */
-/*static __always_inline __u64 sock_select_slot(struct iphdr *iph) {
+static __always_inline __u64 sock_select_slot(struct iphdr *iph) {
   return iph->protocol == IPPROTO_TCP ? bpf_get_prandom_u32() : 0;
-}*/
+}
 
 SEC("xdp")
 int xdp_prog_func(struct xdp_md *ctx) {
-	//__be32 dest_ip;
-	//__be16 dest_port;
+
+  //const char db_str[] = "New packet!";
+  //bpf_trace_printk(db_str, sizeof(db_str));
+
+
+	__be32 dest_ip;
+	__be16 dest_port;
 
   // Parse the raw packge the get the protocol headers
- 	void *data_end = (void *)(long)ctx->data_end;
 	void *data     = (void *)(long)ctx->data;
+ 	void *data_end = (void *)(long)ctx->data_end;
 
 	// First, parse the ethernet header.
 	struct ethhdr *eth = data;
 	if (data + sizeof(struct ethhdr) > data_end) {
+
 		return XDP_PASS;
 	}
 
 	if (bpf_ntohs(eth->h_proto) != ETH_P_IP) {
 		// The protocol is not IPv4, so we can't parse an IPv4 source address.
+
 		return XDP_PASS;
 	}
 
 	// Then parse the IP header.
-	struct iphdr *iph = data + sizeof(*eth);
+	struct iphdr *iph = data + sizeof(struct ethhdr);
 	if (data + sizeof(struct ethhdr) +  sizeof(struct iphdr) > data_end) {
 		return XDP_PASS;
 	}
+  // Set the destination IP
+	dest_ip = iph->daddr;
 
-	if (iph->protocol != IPPROTO_TCP)
-		return XDP_PASS;
+  __be32 aux = 4126409226;
+  if (dest_ip == aux) {
+    const char db_str[] = "Destination IP: %d\n";
+    bpf_trace_printk(db_str, sizeof(db_str), dest_ip);
+  } /*else {
+    const char db_str[] = "Destination IP: %d aux: %d\n";
+    bpf_trace_printk(db_str, sizeof(db_str), dest_ip, aux);
+  }*/
 
-	// Then parse the TCP header
-	struct tcphdr *tcp = (struct tcphdr *)(iph + 1);
-	if ((void *)(tcp + 1) > data_end)
-		return XDP_PASS;
+  struct tcphdr *tcp = NULL;
+  struct udphdr *udph = NULL;
+  if (iph->protocol == IPPROTO_TCP) {
+    // Then parse the TCP header
+  	struct tcphdr *tcp = (struct tcphdr *)(iph + 1);
 
-	// Save the destination IP address and TCP port
-	//dest_ip = (__be32)(iph->daddr);
-	//dest_port = (__be16)(tcp->dest);
+	  if ((void *)(tcp + 1) > data_end) 
+	  	return XDP_PASS;
+	  // Save the destination TCP port
+	  dest_port = tcp->dest;
 
-  //bpf_trace_printk("Destination address: %x and port %x\n", dest_ip, dest_port);
+  } else if (iph->protocol == IPPROTO_UDP) {
+    // Parse de UDP header
+    struct udphdr *udph = (struct udphdr *)(iph + 1);
+
+    if ((void *)(udph + 1) > data_end)
+      return XDP_PASS;
+	  // Save the destination UDP port
+    dest_port = udph->dest;
+  }
+  else {
+    return XDP_PASS;
+  }
+
+  //__be32 aux = 4230152714;
+  /*__be16 aux2 = 20480;
+  if (dest_port == aux2) {
+    const char db_str[] = "Destination IP: %d and port: %d\n";
+    bpf_trace_printk(db_str, sizeof(db_str), dest_ip, dest_port);
+  }*/
+  //const char debug_str[] = "Destination address: %x and port %x\n";
+  //bpf_trace_printk(debug_str, sizeof(debug_str), dest_ip, dest_port);
 
   // Start backend lookup
-	/*struct V4_key key = {
+	struct V4_key key = {
 		.address = dest_ip,
 		.dport = dest_port,
 		.backend_slot = 0
 	};
 
-  struct lb4_service *svc;*/
-  //struct lb4_service *backend_slot;
-  //struct lb4_backend *backend = NULL;
 
-	//__u32 backend_id = 0;
+  //const char debug_str[] = "Destination address: %x and port %x\n";
+  //bpf_trace_printk(debug_str, sizeof(debug_str), key.address, key.dport);
+
+  struct lb4_service *svc;
+  struct lb4_service *backend_slot;
+  struct lb4_backend *backend = NULL;
+
+	__u32 backend_id = 0;
 
 	// The first lookup is meant to see if the "Service frontend" exists and check how many 
   // backends, i.e, Endpoints, it has
-  /*svc = lb4_lookup_service(&key);
+  svc = lb4_lookup_service(&key);
   if (!svc) {
-  	return -ENXIO;
-  }*/
+  	return XDP_PASS;
+  }
   
   // Logs are in /tracing/trace_pipe inside the kpng-ebpf-tools container
-  //const char debug_str[] = "Entering the kpng ebpf backend, caught a\
-  //packet destined for my VIP, the address is: %x port is: %x and selected backend id is: %x\n";
+  const char debug_str[] = "Entering the kpng ebpf backend, caught a\
+  packet destined for my VIP, the address is: %x port is: %x and selected backend id is: %x\n";
+  bpf_trace_printk(debug_str, sizeof(debug_str),  key.address, key.dport, svc->backend_id);
   
-  //bpf_trace_printk(debug_str, sizeof(debug_str),  key.address, key.dport, svc->backend_id);
 
-  /*if (backend_id == 0) {
+  if (backend_id == 0) {
     // Do load-balancing by sorting a backend. Then, lookups the same v4_svc_map
     // with the key.backend_slot filled to get the backend_id relative to the sorted backend
     key.backend_slot = (sock_select_slot(iph) % svc->count) + 1;
     backend_slot = __lb4_lookup_backend_slot(&key);
     if (!backend_slot) {
-      return -ENOENT;
+      return XDP_PASS;
     }
 
     // The backend_id is used to fetch the final Endpoint
@@ -174,16 +216,25 @@ int xdp_prog_func(struct xdp_md *ctx) {
   }
 
   if (!backend) {
-    return -ENOENT;
-  }*/
+    return XDP_PASS;
+  }
 
   // Maybe add that in the future
   /*if (sock4_skip_xlate_if_same_netns(ctx, backend)) {
     return -ENXIO;
   }*/
 
-  /*iph->daddr = dest_ip;
-  tcp->dest = dest_port;*/
+  iph->daddr = dest_ip;
+  if (tcp) {
+    tcp->dest = dest_port;
 
-	return XDP_PASS;
+  }
+  else if (udph) {
+    udph->dest = dest_port;
+  }
+  else {
+    return XDP_PASS;
+  }
+
+	return XDP_TX;
 }
