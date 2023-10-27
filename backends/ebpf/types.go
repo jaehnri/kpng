@@ -120,6 +120,7 @@ type ServicePort interface {
 // or can be used for constructing a more specific ServiceInfo struct
 // defined by the proxier if needed.
 type BaseServiceInfo struct {
+	svcType                  string
 	clusterIP                net.IP
 	port                     int
 	protocol                 localv1.Protocol
@@ -247,6 +248,7 @@ func (sct *ebpfController) newBaseServiceInfo(port *localv1.PortMapping, service
 
 	clusterIP := GetClusterIPByFamily(sct.ipFamily, service)
 	info := &BaseServiceInfo{
+		svcType:           service.Type,
 		clusterIP:         net.ParseIP(clusterIP),
 		port:              int(port.Port),
 		portName:          port.Name,

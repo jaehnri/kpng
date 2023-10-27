@@ -42,6 +42,17 @@ import (
 	"github.com/cespare/xxhash"
 )
 
+func printInterfaces() {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, i := range interfaces {
+		klog.Infof("Index: %d; Name: %s; MTU: %d", i.Index, i.Name, i.MTU)
+	}
+}
+
 //go:generate bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf ./bpf/cgroup_connect4.c
 func ebpfSetup() ebpfController {
 	var err error
@@ -83,6 +94,23 @@ func ebpfSetup() ebpfController {
 		Attach:  cebpf.AttachCGroupInet4Connect,
 		Program: objs.Sock4Connect,
 	})
+
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	printInterfaces()
+
+	ifce, err := net.InterfaceByName("eth0")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	l, err = link.AttachXDP(link.XDPOptions{
+		Interface: ifce.Index,
+		Program:   objs.XdpProgFunc,
+	})
+
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -128,7 +156,8 @@ func (ebc *ebpfController) Callback(ch <-chan *client.ServiceEndpoints) {
 	for serviceEndpoints := range ch {
 		klog.V(5).Infof("Iterating fullstate channel, got: %+v", serviceEndpoints)
 
-		if serviceEndpoints.Service.Type != "ClusterIP" {
+		svcType := serviceEndpoints.Service.Type
+		if svcType != string(v1.ServiceTypeClusterIP) && svcType != string(v1.ServiceTypeNodePort) {
 			klog.Warning("Ebpf Proxy not yet implemented for svc types other than clusterIP")
 			continue
 		}
@@ -170,6 +199,16 @@ func (ebc *ebpfController) Sync() {
 	for _, KV := range ebc.svcMap.Deleted() {
 		svcInfo := KV.Value.(svcEndpointMapping)
 
+		if svcInfo.Svc.svcType == string(v1.ServiceTypeNodePort) {
+			klog.Infof("Deleting NodePort: %s", string(KV.Key))
+
+			nodePortKey, _ := makeNodePortEbpfMaps(svcInfo)
+			if _, err := ebc.objs.V4NodeportMap.BatchDelete(nodePortKey, &cebpf.BatchOptions{}); err != nil {
+				klog.Fatalf("Failed Deleting NodePort service entries: %v", err)
+				ebc.Cleanup()
+			}
+		}
+
 		klog.Infof("Deleting ServicePort: %s", string(KV.Key))
 
 		svcKeys, _, backendKeys, _ := makeEbpfMaps(svcInfo)
@@ -204,7 +243,40 @@ func (ebc *ebpfController) Sync() {
 			klog.Fatalf("Failed Loading service backend entries: %v", err)
 			ebc.Cleanup()
 		}
+
+		if svcInfo.Svc.svcType == string(v1.ServiceTypeNodePort) {
+			nodePortKey, nodePortValue := makeNodePortEbpfMaps(svcInfo)
+			if _, err := ebc.objs.V4NodeportMap.BatchUpdate(nodePortKey, nodePortValue, &cebpf.BatchOptions{}); err != nil {
+				klog.Fatalf("Failed Loaded NodePort service backend entries: %v", err)
+				ebc.Cleanup()
+			}
+		}
 	}
+}
+
+func makeNodePortEbpfMaps(svcMapping svcEndpointMapping) (nodePortKey bpfNodeportV4Key, nodePortValue bpfNodeportV4Backend) {
+	var svcNodePort [2]byte
+	var backendAddress [4]byte
+	var backendPort [2]byte
+
+	int32Address := binary.BigEndian.Uint32(svcMapping.Svc.clusterIP.To4())
+	binary.BigEndian.PutUint16(svcNodePort[:], uint16(svcMapping.Svc.nodePort))
+	binary.BigEndian.PutUint32(backendAddress[:], int32Address)
+	binary.BigEndian.PutUint16(backendPort[:], uint16(svcMapping.Svc.port))
+
+	nodePortKey = bpfNodeportV4Key{
+		Nodeport: binary.BigEndian.Uint16(svcNodePort[:]),
+	}
+
+	nodePortValue = bpfNodeportV4Backend{
+		Address: binary.LittleEndian.Uint32(backendAddress[:]),
+		Port:    binary.LittleEndian.Uint16(backendPort[:]),
+	}
+
+	klog.V(5).Infof("Writing svcNodePortKey %+v \nsvcNodePortValue %+v\n",
+		nodePortKey, nodePortValue)
+
+	return nodePortKey, nodePortValue
 }
 
 func makeEbpfMaps(svcMapping svcEndpointMapping) (svcKeys []bpfV4Key, svcValues []bpfLb4Service,
