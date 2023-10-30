@@ -254,7 +254,7 @@ func (ebc *ebpfController) Sync() {
 	}
 }
 
-func makeNodePortEbpfMaps(svcMapping svcEndpointMapping) (nodePortKey bpfNodeportV4Key, nodePortValue bpfNodeportV4Backend) {
+func makeNodePortEbpfMaps(svcMapping svcEndpointMapping) (nodePortKey []bpfNodeportV4Key, nodePortValue []bpfNodeportV4Backend) {
 	var svcNodePort [2]byte
 	var backendAddress [4]byte
 	var backendPort [2]byte
@@ -264,14 +264,14 @@ func makeNodePortEbpfMaps(svcMapping svcEndpointMapping) (nodePortKey bpfNodepor
 	binary.BigEndian.PutUint32(backendAddress[:], int32Address)
 	binary.BigEndian.PutUint16(backendPort[:], uint16(svcMapping.Svc.port))
 
-	nodePortKey = bpfNodeportV4Key{
+	nodePortKey = append(nodePortKey, bpfNodeportV4Key{
 		Nodeport: binary.BigEndian.Uint16(svcNodePort[:]),
-	}
+	})
 
-	nodePortValue = bpfNodeportV4Backend{
-		Address: binary.LittleEndian.Uint32(backendAddress[:]),
+	nodePortValue = append(nodePortValue, bpfNodeportV4Backend{
+		Address: binary.BigEndian.Uint32(backendAddress[:]),
 		Port:    binary.LittleEndian.Uint16(backendPort[:]),
-	}
+	})
 
 	klog.V(5).Infof("Writing svcNodePortKey %+v \nsvcNodePortValue %+v\n",
 		nodePortKey, nodePortValue)
