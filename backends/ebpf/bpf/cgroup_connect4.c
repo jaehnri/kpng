@@ -19,6 +19,7 @@
 #define ETH_P_IP	0x0800
 #define IPPROTO_TCP 6
 #define IPPROTO_UDP 17
+#define IP_CT_NEW 2
 
 
 
@@ -231,9 +232,6 @@ int xdp_prog_func(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
-    DEBUG_BPF_PRINTK("New packet in xdp\n");
-
-
     // Check Ethernet header
     struct ethhdr *eth = data;
     if(data + sizeof(*eth) > data_end) 
@@ -267,7 +265,11 @@ int xdp_prog_func(struct xdp_md *ctx) {
         bpf_tuple.ipv4.sport = tcph->source;
         bpf_tuple.ipv4.dport = tcph->dest;
 
-        DEBUG_BPF_PRINTK("Packet daddr: %d dport: %d", iph->daddr, tcph->dest);
+        __be32 aux = 67113644;
+        __be16 aux2 = 6265;
+        if (bpf_tuple.ipv4.daddr == aux && bpf_tuple.ipv4.dport == aux2) {
+            DEBUG_BPF_PRINTK("Packet daddr: %u dport: %u", iph->daddr, tcph->dest);
+        }
     } else if (iph->protocol == IPPROTO_UDP) {
         struct udphdr *udph = (struct udphdr *)(iph + 1);
         if((void *)(udph + 1) > data_end)
@@ -280,14 +282,21 @@ int xdp_prog_func(struct xdp_md *ctx) {
 
     // Lookup for nodeport entry in bpfmap
     struct nodeportV4_key key = {
-        .nodeport = bpf_ntohs(bpf_tuple.ipv4.daddr)
+        .nodeport = bpf_ntohs(bpf_tuple.ipv4.dport)
     };
     struct nodeportV4_backend *lkup = (struct nodeportV4_backend *) bpf_map_lookup_elem(&v4_nodeport_map, &key);
     if (!lkup) {
-        DEBUG_BPF_PRINTK("lkup result: NULL \n")
+
+        __be32 aux = 67113644;
+        __be16 aux2 = 6265;
+        //__be32 aux = 2886860804;
+        //__be16 aux2 = 31000;
+        if (bpf_tuple.ipv4.daddr == aux && bpf_tuple.ipv4.dport == aux2) {
+            DEBUG_BPF_PRINTK("lkup result: NULL \n")
+        }
         return XDP_PASS;
     }
-    DEBUG_BPF_PRINTK("lkup result: daddr %d dport %d\n", lkup->address, lkup->port)
+    DEBUG_BPF_PRINTK("lkup result: daddr %u dport %u\n", lkup->address, lkup->port)
 
     // Check for Conntrack entry
     ct = bpf_xdp_ct_lookup(ctx, &bpf_tuple, 
@@ -305,6 +314,7 @@ int xdp_prog_func(struct xdp_md *ctx) {
         bpf_ct_release(ct);
     } else{
         // Create new CT entry
+        DEBUG_BPF_PRINTK("No CT entry found. Creating new CT entry.\n");
         struct nf_conn *nct = bpf_xdp_ct_alloc(ctx,
             &bpf_tuple, sizeof(bpf_tuple.ipv4),
             &opts_def, sizeof(opts_def));
@@ -316,18 +326,50 @@ int xdp_prog_func(struct xdp_md *ctx) {
         
         // Add DNAT info
         union nf_inet_addr addr = {};
-        addr.ip = lkup->address;
-        bpf_ct_set_nat_info(nct, &addr, lkup->port, NF_NAT_MANIP_DST);
+        addr.ip = 33620234;
+        //addr.ip = lkup->address;
+        //addr.ip = bpf_get_prandom_u32();
+        __u16 port = 80;//bpf_get_prandom_u32();  
+
+
+        DEBUG_BPF_PRINTK("NCT information 1 before Dnat dAddr %u, sAddr: %u dPort %u sPort %u",
+         nct->tuplehash[1].tuple.dst.u3.ip, nct->tuplehash[1].tuple.src.u3.ip,
+         nct->tuplehash[1].tuple.dst.u.all, nct->tuplehash[1].tuple.src.u.all);
+        
+        int res = bpf_ct_set_nat_info(nct, &addr, port, NF_NAT_MANIP_DST);
+        DEBUG_BPF_PRINTK("Return from NAT function %d", res);
+        if (res == -EINVAL) {
+            DEBUG_BPF_PRINTK("Error setting first nat"); 
+        }
+        //DEBUG_BPF_PRINTK("NCT information 0 after Dnat destination %u, source: %u ",
+        // nct->tuplehash[0].tuple.dst.u3.ip, nct->tuplehash[0].tuple.src.u3.ip);
+        DEBUG_BPF_PRINTK("NCT information 1 after Dnat dAddr %u, sAddr: %u dPort %u sPort %u",
+         nct->tuplehash[1].tuple.dst.u3.ip, nct->tuplehash[1].tuple.src.u3.ip,
+         nct->tuplehash[1].tuple.dst.u.all, nct->tuplehash[1].tuple.src.u.all);
         
         // Add SNAT info
         addr.ip = bpf_tuple.ipv4.daddr;
-        bpf_ct_set_nat_info(nct, &addr, -1, NF_NAT_MANIP_SRC);
+        res = bpf_ct_set_nat_info(nct, &addr, -1, NF_NAT_MANIP_SRC);
+        if (res) {
+            DEBUG_BPF_PRINTK("Error setting second nat");
+        }
+
+
+        //DEBUG_BPF_PRINTK("NCT information 0 after Snat destination %u, source: %u ", nct->tuplehash[0].tuple.dst.u3.ip, nct->tuplehash[0].tuple.src.u3.ip);
+        DEBUG_BPF_PRINTK("NCT information 1 after Snat dAddr %u, sAddr: %u dPort %u sPort %u",
+         nct->tuplehash[1].tuple.dst.u3.ip, nct->tuplehash[1].tuple.src.u3.ip,
+         nct->tuplehash[1].tuple.dst.u.all, nct->tuplehash[1].tuple.src.u.all);
 
         // Add timeout and insert entry
         bpf_ct_set_timeout(nct, 30000);
+        bpf_ct_set_status(nct, IP_CT_NEW);
+        //1DEBUG_BPF_PRINTK("nf_conn: %+\b", );
         ct = bpf_ct_insert_entry(nct);
         if(ct) {
+            DEBUG_BPF_PRINTK("Successfully add CT entry.\n");
             bpf_ct_release(ct);
+        } else {
+            DEBUG_BPF_PRINTK("Could not add CT entry.\n");
         }
     }
 
