@@ -266,6 +266,11 @@ function create_cluster {
       nodes:
       - role: control-plane
       - role: worker
+        extraPortMappings:
+        - containerPort: 31000  # The NodePort of your service
+          hostPort: 31000  # The port that will be exposed on the host
+          listenAddress: "0.0.0.0"  # The address where the host will listen
+          protocol: tcp
       - role: worker
 EOF
 

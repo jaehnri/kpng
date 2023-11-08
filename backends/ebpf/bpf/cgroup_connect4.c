@@ -7,6 +7,8 @@
 #include <errno.h>
 #include "bpf_endian.h"
 #include "common.h"
+//#include <arpa/inet.h>
+
 //#include "vmlinux.h"
 
 #define SYS_REJECT 0
@@ -123,83 +125,83 @@ return bpf_map_lookup_elem(&v4_svc_map, key);
 static __always_inline bool
 sock4_skip_xlate_if_same_netns(struct bpf_sock_addr *ctx,
 const struct lb4_backend *backend) {
-#ifdef BPF_HAVE_SOCKET_LOOKUP
-struct bpf_sock_tuple tuple = {
-.ipv4.daddr = backend->address,
-.ipv4.dport = backend->port,
-};
-struct bpf_sock *sk = NULL;
+    #ifdef BPF_HAVE_SOCKET_LOOKUP
+        struct bpf_sock_tuple tuple = {
+        .ipv4.daddr = backend->address,
+        .ipv4.dport = backend->port,
+        };
+        struct bpf_sock *sk = NULL;
 
-switch (ctx->protocol) {
-case IPPROTO_TCP:
-sk = sk_lookup_tcp(ctx, &tuple, sizeof(tuple.ipv4), BPF_F_CURRENT_NETNS, 0);
-break;
-case IPPROTO_UDP:
-sk = sk_lookup_udp(ctx, &tuple, sizeof(tuple.ipv4), BPF_F_CURRENT_NETNS, 0);
-break;
-}
+        switch (ctx->protocol) {
+        case IPPROTO_TCP:
+        sk = sk_lookup_tcp(ctx, &tuple, sizeof(tuple.ipv4), BPF_F_CURRENT_NETNS, 0);
+        break;
+        case IPPROTO_UDP:
+        sk = sk_lookup_udp(ctx, &tuple, sizeof(tuple.ipv4), BPF_F_CURRENT_NETNS, 0);
+        break;
+        }
 
-if (sk) {
-sk_release(sk);
-return true;
-}
-#endif /* BPF_HAVE_SOCKET_LOOKUP */
-return false;
-}
+        if (sk) {
+        sk_release(sk);
+        return true;
+        }
+        #endif /* BPF_HAVE_SOCKET_LOOKUP */
+        return false;
+    }
 
-static __always_inline void ctx_set_port(struct bpf_sock_addr *ctx,
-__be16 dport) {
-ctx->user_port = (__u32)dport;
-}
+    static __always_inline void ctx_set_port(struct bpf_sock_addr *ctx,
+    __be16 dport) {
+    ctx->user_port = (__u32)dport;
+    }
 
 static __always_inline int __sock4_fwd(struct bpf_sock_addr *ctx) {
-struct V4_key key = {
-.address = ctx->user_ip4,
-.dport = ctx_dst_port(ctx),
-.backend_slot = 0,
-};
+    struct V4_key key = {
+        .address = ctx->user_ip4,
+        .dport = ctx_dst_port(ctx),
+        .backend_slot = 0,
+    };
 
-struct lb4_service *svc;
-struct lb4_service *backend_slot;
-struct lb4_backend *backend = NULL;
+    struct lb4_service *svc;
+    struct lb4_service *backend_slot;
+    struct lb4_backend *backend = NULL;
 
-__u32 backend_id = 0;
+    __u32 backend_id = 0;
 
-svc = lb4_lookup_service(&key);
-if (!svc) {
-return -ENXIO;
-}
+    svc = lb4_lookup_service(&key);
+    if (!svc) {
+    return -ENXIO;
+    }
 
-// Logs are in /sys/kernel/debug/tracing/trace_pipe
+    // Logs are in /sys/kernel/debug/tracing/trace_pipe
 
-const char debug_str[] = "Entering the kpng ebpf backend, caught a\
-packet destined for my VIP, the address is: %x port is: %x and selected backend id is: %x\n";
+    const char debug_str[] = "Entering the kpng ebpf backend, caught a\
+    packet destined for my VIP, the address is: %x port is: %x and selected backend id is: %x\n";
 
-bpf_trace_printk(debug_str, sizeof(debug_str), key.address, key.dport, svc->backend_id);
+    bpf_trace_printk(debug_str, sizeof(debug_str), key.address, key.dport, svc->backend_id);
 
-if (backend_id == 0) {
-key.backend_slot = (sock_select_slot(ctx) % svc->count) + 1;
-backend_slot = __lb4_lookup_backend_slot(&key);
-if (!backend_slot) {
-return -ENOENT;
-}
+    if (backend_id == 0) {
+    key.backend_slot = (sock_select_slot(ctx) % svc->count) + 1;
+    backend_slot = __lb4_lookup_backend_slot(&key);
+    if (!backend_slot) {
+    return -ENOENT;
+    }
 
-backend_id = backend_slot->backend_id;
-backend = __lb4_lookup_backend(backend_id);
-}
+    backend_id = backend_slot->backend_id;
+    backend = __lb4_lookup_backend(backend_id);
+    }
 
-if (!backend) {
-return -ENOENT;
-}
+    if (!backend) {
+    return -ENOENT;
+    }
 
-if (sock4_skip_xlate_if_same_netns(ctx, backend)) {
-return -ENXIO;
-}
+    if (sock4_skip_xlate_if_same_netns(ctx, backend)) {
+    return -ENXIO;
+    }
 
-ctx->user_ip4 = backend->address;
-ctx_set_port(ctx, backend->port);
+    ctx->user_ip4 = backend->address;
+    ctx_set_port(ctx, backend->port);
 
-return 0;
+    return 0;
 }
 
 SEC("cgroup/connect4")
@@ -229,7 +231,7 @@ __uint(max_entries, DEFAULT_MAX_EBPF_MAP_ENTRIES);
 
 SEC("xdp")
 int xdp_prog_func(struct xdp_md *ctx) {
-    void *data_end = (void *)(long)ctx->data_end;
+    /*void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
     // Check Ethernet header
@@ -265,9 +267,9 @@ int xdp_prog_func(struct xdp_md *ctx) {
         bpf_tuple.ipv4.sport = tcph->source;
         bpf_tuple.ipv4.dport = tcph->dest;
 
-        __be32 aux = 67113644;
+        //__be32 aux = 67113644;
         __be16 aux2 = 6265;
-        if (bpf_tuple.ipv4.daddr == aux && bpf_tuple.ipv4.dport == aux2) {
+        if (bpf_tuple.ipv4.dport == aux2) {
             DEBUG_BPF_PRINTK("Packet daddr: %u dport: %u", iph->daddr, tcph->dest);
         }
     } else if (iph->protocol == IPPROTO_UDP) {
@@ -301,6 +303,8 @@ int xdp_prog_func(struct xdp_md *ctx) {
     // Check for Conntrack entry
     ct = bpf_xdp_ct_lookup(ctx, &bpf_tuple, 
         sizeof(bpf_tuple.ipv4), &opts_def, sizeof(opts_def));
+
+    
     if(ct) {
         DEBUG_BPF_PRINTK("CT lookup (ct found) 0x%X\n", ct)
         DEBUG_BPF_PRINTK("Timeout %u  status 0x%X dport 0x%X \n",  
@@ -326,7 +330,9 @@ int xdp_prog_func(struct xdp_md *ctx) {
         
         // Add DNAT info
         union nf_inet_addr addr = {};
-        addr.ip = 33620234;
+        //inet_aton("10.1.1.2", &addr);
+        __be32 a = 33620234;
+        addr.ip = a;
         //addr.ip = lkup->address;
         //addr.ip = bpf_get_prandom_u32();
         __u16 port = 80;//bpf_get_prandom_u32();  
@@ -359,12 +365,14 @@ int xdp_prog_func(struct xdp_md *ctx) {
         DEBUG_BPF_PRINTK("NCT information 1 after Snat dAddr %u, sAddr: %u dPort %u sPort %u",
          nct->tuplehash[1].tuple.dst.u3.ip, nct->tuplehash[1].tuple.src.u3.ip,
          nct->tuplehash[1].tuple.dst.u.all, nct->tuplehash[1].tuple.src.u.all);
-
+        
         // Add timeout and insert entry
+
         bpf_ct_set_timeout(nct, 30000);
         bpf_ct_set_status(nct, IP_CT_NEW);
         //1DEBUG_BPF_PRINTK("nf_conn: %+\b", );
         ct = bpf_ct_insert_entry(nct);
+        DEBUG_BPF_PRINTK("bpf_ct_insert_entry() returned ct 0x%x\n", ct)
         if(ct) {
             DEBUG_BPF_PRINTK("Successfully add CT entry.\n");
             bpf_ct_release(ct);
@@ -372,6 +380,7 @@ int xdp_prog_func(struct xdp_md *ctx) {
             DEBUG_BPF_PRINTK("Could not add CT entry.\n");
         }
     }
+    */
 
     return XDP_PASS;
 }

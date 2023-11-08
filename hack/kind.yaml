@@ -46,6 +46,11 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: "kube-proxy=kpng"
+    #extraPortMappings:
+    #- containerPort: 30000  # The NodePort of your service
+    #  hostPort: 30000  # The port that will be exposed on the host
+    #  listenAddress: "0.0.0.0"  # The address where the host will listen
+    #  protocol: tcp
   - role: worker
     kubeadmConfigPatches:
       - |
