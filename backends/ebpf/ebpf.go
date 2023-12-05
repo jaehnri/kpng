@@ -128,7 +128,7 @@ func (ebc *ebpfController) Callback(ch <-chan *client.ServiceEndpoints) {
 	for serviceEndpoints := range ch {
 		klog.V(5).Infof("Iterating fullstate channel, got: %+v", serviceEndpoints)
 
-		if serviceEndpoints.Service.Type != "ClusterIP" {
+		if serviceEndpoints.Service.Type != "ClusterIP" || len(serviceEndpoints.Service.IPs.ClusterIPs.V4) == 0 {
 			klog.Warning("Ebpf Proxy not yet implemented for svc types other than clusterIP")
 			continue
 		}
